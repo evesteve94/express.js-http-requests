@@ -1,9 +1,49 @@
-import oExpress from "express";
+import oExpress, { response } from "express";
 
 const app = oExpress();
 
 //middleware - funktion som anropas när vissa api requests hanteras
 app.use(oExpress.json());
+
+
+//måste defineras före middleware kallas
+const loggingMiddleware = (request, response, next) => {
+    console.log(`${request.method} - ${request.url}`)
+    next();//next ==> avsluta middleware 
+}
+
+const resolveIndexByUserId = (_request, _response, next) => {
+    //deconstruct body från req och id ur params ur req
+    const {
+        params: {id}} 
+        = _request;
+
+    //NaN
+    const parsedId = parseInt(id); //bad request
+    if(isNaN(parsedId)) return _response.sendStatus(400);
+
+    const findUserIndex = mockUsers.findIndex(
+        (user) => user.id === parsedId
+    );
+
+    //findIndex() returnerar -1 om index inte hittas - error
+    if(findUserIndex === -1) return _response.sendStatus(404);
+
+    //spara i en nyckel i requesten
+    _request.findUserIndex = findUserIndex;
+
+    //avsluta
+    next();
+}
+
+//globalt för när middleware kallas
+// app.use(loggingMiddleware, (request, response, next) => {
+//     console.log("Finished Logging...");
+//     next();
+// })
+
+//global - kommer att användas vid varje rendering
+// app.use(loggingMiddleware);
 
 const PORT = process.env.PORT || 3006;
 
@@ -27,10 +67,31 @@ HTTP-requests basics: GET POST PUT PATCH DELETE
 //GET
 
 //     path , request handler       
-app.get("/", (_request, _response) => {
+app.get("/", loggingMiddleware, (_request, _response) => {
     //ex 1
     _response.status(201).send('Hello world!')
 });
+
+
+//kalla på flera middlewares i rad (sekventiellt)
+app.get("/middleware",
+(request, response, next) => {
+    console.log("Base URL 1");
+    next();
+}, 
+(request, response, next) => {
+    console.log("Base URL 2");
+    next();
+},
+(request, response, next) => {
+    console.log("Base URL 3");
+    next();
+},
+(_request, _response) => {
+    //ex 1
+    _response.status(201).send('Hello world!')
+});
+
 
 //query strings and query params ex. http://localhost:3006/api/users?filter=userName&value=h 
 
@@ -54,6 +115,7 @@ app.get("/api/products", (_request, _response) => {
 
 //route parameters
 app.get("/api/users/:id", (_request, _response)=> {
+    
     console.log(_request.params);
     //omvanla till siffra
     const parsedId = parseInt(_request.params.id);
@@ -89,28 +151,14 @@ inkluderas: { "userName": "jackson", "displayName": "Jack" }
 
 fel: {userName: "jackson"} - kommer skriva över all tidigare data
 */
-app.put("/api/users/:id", (_request, _response) => {
-    //deconstruct body från req och id ur params ur req
-    const {
-        body, 
-        params: {id}} 
-        = _request;
+app.put("/api/users/:id", resolveIndexByUserId, (_request, _response) => {
 
-    //NaN
-    const parsedId = parseInt(id); //bad request
-    if(isNaN(parsedId)) return _response.sendStatus(400);
-
-    const findUserIndex = mockUsers.findIndex(
-        (user) => user.id === parsedId
-    );
-
-    //findIndex() returnerar -1 om index inte hittas - error
-    if(findUserIndex === -1) return _response.sendStatus(404);
-
+    //deconstruct bady och vårt eget-gjorda objekt
+    const {body, findUserIndex} = _request;
     //uppdaterar rätt user baserat på index
     mockUsers[findUserIndex] = {
         //behåller id
-        id: parsedId,
+        id: mockUsers[findUserIndex].id,
         //spreadar body (det som skickas i put-requesten)
         ...body
     }
@@ -118,23 +166,10 @@ app.put("/api/users/:id", (_request, _response) => {
 });
 
 //PATCH - uppdaterar viss (partial) befintlig data
-app.patch("/api/users/:id", (_request, _response) => {
-    //deconstruct body från req och id ur params ur req
-    const {
-        body, 
-        params: {id}} 
-        = _request;
+app.patch("/api/users/:id", resolveIndexByUserId, (_request, _response) => {
 
-    //NaN
-    const parsedId = parseInt(id); //bad request
-    if(isNaN(parsedId)) return _response.sendStatus(400);
-
-    const findUserIndex = mockUsers.findIndex(
-        (user) => user.id === parsedId
-    );
-
-    //findIndex() returnerar -1 om index inte hittas - error
-    if(findUserIndex === -1) return _response.sendStatus(404);
+    //deconstruct bady och vårt eget-gjorda objekt
+    const {body, findUserIndex} = _request;
 
     /*
     iom spread av båda gamla och nya datan överskrids bara de specificerade
@@ -151,25 +186,10 @@ app.patch("/api/users/:id", (_request, _response) => {
 });
 
 //DELETE
-app.delete("/api/users/:id", (_request, _response) => {
-    //brukar inte deconstruct en payload/reqest.body när man raderar
+app.delete("/api/users/:id", resolveIndexByUserId, (_request, _response) => {
 
-    //deconstruct id ur params ur request
-    const {
-        params: {id}
-    } = _request;
-
-    //NaN - undersäker bad request
-    const parsedId = parseInt(id); //bad request
-    if(isNaN(parsedId)) return _response.sendStatus(400);
-
-    //hitta anändarens index baserat på id
-    const findUserIndex = mockUsers.findIndex(
-        (user) => user.id === parsedId
-    );
-
-    //findIndex() returnerar -1 om index inte hittas - error
-    if(findUserIndex === -1) return _response.sendStatus(404);
+    //deconstruct bady och vårt eget-gjorda objekt
+    const {findUserIndex} = _request;
 
     //radera användare ur vår array (splice - tar bort mellan index num, num)
     mockUsers.splice(findUserIndex, 1);
